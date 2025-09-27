@@ -19,9 +19,39 @@ const courseForm = document.getElementById('courseForm');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const notification = document.getElementById('notification');
 
+// Confirmation Modal Elements (NEW)
+const confirmationModal = document.createElement('div');
+confirmationModal.id = 'confirmationModal';
+confirmationModal.className = 'modal';
+confirmationModal.innerHTML = `
+    <div class="modal-content" style="max-width: 400px; padding: 0;">
+        <div class="modal-header" style="background: #e74c3c; color: white; border-bottom: none;">
+            <h3 id="confirmationModalTitle" style="color: white; font-weight: 700;">Confirm Action</h3>
+            <button class="modal-close" id="closeConfirmationModal" style="color: white; opacity: 0.9;">✖</button>
+        </div>
+        <div style="padding: 30px; text-align: center;">
+            <div style="font-size: 4rem; color: #e74c3c; margin-bottom: 20px;">
+                <span class="icon">⚠️</span>
+            </div>
+            <p id="confirmationMessage" style="margin-bottom: 25px; font-size: 16px; color: #34495e; line-height: 1.5;">
+                <!-- Confirmation message content -->
+            </p>
+        </div>
+        <div class="modal-actions" style="border-top: 1px solid #e1e8ed; padding: 20px 30px; justify-content: space-between;">
+            <button type="button" class="btn-secondary" id="cancelConfirmationBtn" style="flex-grow: 1; margin-right: 10px;">Cancel</button>
+            <button type="button" class="btn-delete" id="confirmActionBtn" style="flex-grow: 1;">Delete</button>
+        </div>
+    </div>
+`;
+document.body.appendChild(confirmationModal);
+
+
 // Initialize App
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
+    // Add event listeners for the new confirmation modal
+    document.getElementById('closeConfirmationModal').addEventListener('click', () => confirmationModal.classList.remove('active'));
+    document.getElementById('cancelConfirmationBtn').addEventListener('click', () => confirmationModal.classList.remove('active'));
 });
 
 // Initialize Application
@@ -73,6 +103,7 @@ function setupEventListeners() {
     window.addEventListener('click', (e) => {
         if (e.target === studentModal) closeStudentModal();
         if (e.target === courseModal) closeCourseModal();
+        if (e.target === confirmationModal) confirmationModal.classList.remove('active');
     });
 
     // Close notification
@@ -176,11 +207,12 @@ function renderRecentStudents() {
 
 function createStudentRow(student, index) {
     const row = document.createElement('tr');
-    const shortId = student._id.substring(student._id.length - 8);
+    // Display the numeric studentId if available, otherwise fallback to sliced MongoDB _id
+    const displayId = student.studentId || student._id.substring(student._id.length - 8); 
     const enrollmentDate = new Date(student.enrollmentDate).toLocaleDateString();
     
     row.innerHTML = `
-        <td>${shortId}</td>
+        <td>${displayId}</td>
         <td>${student.name}</td>
         <td>${student.course}</td>
         <td>${enrollmentDate}</td>
@@ -188,7 +220,7 @@ function createStudentRow(student, index) {
         <td>
             <div class="actions-container">
                 <button class="btn-edit" onclick="editStudent('${student._id}')">✏️ Edit</button>
-                <button class="btn-delete" onclick="deleteStudent('${student._id}')">🗑️ Delete</button>
+                <button class="btn-delete" onclick="showConfirmation('student', '${student._id}', '${student.name}')">🗑️ Delete</button>
             </div>
         </td>
     `;
@@ -201,7 +233,8 @@ function filterStudents(searchTerm) {
         student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
         student.course.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student._id.toLowerCase().includes(searchTerm.toLowerCase())
+        (student.studentId && student.studentId.toString().includes(searchTerm))
+        
     );
     
     const tbody = document.getElementById('studentsTableBody');
@@ -246,7 +279,7 @@ function createCourseRow(course, index) {
         <td>
             <div class="actions-container">
                 <button class="btn-edit" onclick="editCourse('${course._id}')">✏️ Edit</button>
-                <button class="btn-delete" onclick="deleteCourse('${course._id}')">🗑️ Delete</button>
+                <button class="btn-delete" onclick="showConfirmation('course', '${course._id}', '${course.name}')">🗑️ Delete</button>
             </div>
         </td>
     `;
@@ -408,33 +441,65 @@ function editCourse(courseId) {
     openCourseModal(courseId);
 }
 
+// --- NEW CONFIRMATION AND DELETE LOGIC ---
+
+/**
+ * Shows a custom confirmation modal for delete actions.
+ * @param {string} type - 'student' or 'course'.
+ * @param {string} id - The MongoDB _id of the item to delete.
+ * @param {string} name - The name of the item to display in the message.
+ */
+function showConfirmation(type, id, name) {
+    const titleElement = document.getElementById('confirmationModalTitle');
+    const messageElement = document.getElementById('confirmationMessage');
+    const confirmBtn = document.getElementById('confirmActionBtn');
+
+    titleElement.textContent = `Delete ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+    messageElement.innerHTML = `Are you sure you want to permanently delete **${name}**? This action cannot be undone.`;
+    confirmBtn.textContent = `Delete ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+
+    // Clear previous listener and add new one
+    confirmBtn.onclick = null;
+    if (type === 'student') {
+        confirmBtn.onclick = () => {
+            confirmationModal.classList.remove('active');
+            deleteStudent(id, name);
+        };
+    } else if (type === 'course') {
+        confirmBtn.onclick = () => {
+            confirmationModal.classList.remove('active');
+            deleteCourse(id, name);
+        };
+    }
+
+    confirmationModal.classList.add('active');
+}
+
 // Delete Functions
-async function deleteStudent(studentId) {
-    if (confirm('Are you sure you want to delete this student?')) {
-        try {
-            await apiRequest(`/students/${studentId}`, 'DELETE');
-            showNotification('Student deleted successfully!', 'success');
-            await loadStudents();
-            await loadDashboardStats();
-        } catch (error) {
-            console.error('Error deleting student:', error);
-        }
+async function deleteStudent(studentId, studentName) {
+    try {
+        await apiRequest(`/students/${studentId}`, 'DELETE');
+        showNotification(`Student "${studentName}" deleted successfully!`, 'success');
+        await loadStudents();
+        await loadDashboardStats();
+    } catch (error) {
+        console.error('Error deleting student:', error);
     }
 }
 
-async function deleteCourse(courseId) {
-    if (confirm('Are you sure you want to delete this course?')) {
-        try {
-            await apiRequest(`/courses/${courseId}`, 'DELETE');
-            showNotification('Course deleted successfully!', 'success');
-            await loadCourses();
-            await loadDashboardStats();
-            populateCourseOptions();
-        } catch (error) {
-            console.error('Error deleting course:', error);
-        }
+async function deleteCourse(courseId, courseName) {
+    try {
+        await apiRequest(`/courses/${courseId}`, 'DELETE');
+        showNotification(`Course "${courseName}" deleted successfully!`, 'success');
+        await loadCourses();
+        await loadDashboardStats();
+        populateCourseOptions();
+    } catch (error) {
+        console.error('Error deleting course:', error);
     }
 }
+
+// --- END NEW CONFIRMATION AND DELETE LOGIC ---
 
 // Utility Functions
 function showLoading() {
