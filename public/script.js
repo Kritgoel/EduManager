@@ -200,7 +200,8 @@ function filterStudents(searchTerm) {
     const filteredStudents = students.filter(student => 
         student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.course.toLowerCase().includes(searchTerm.toLowerCase())
+        student.course.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student._id.toLowerCase().includes(searchTerm.toLowerCase())
     );
     
     const tbody = document.getElementById('studentsTableBody');
